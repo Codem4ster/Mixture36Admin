@@ -1,453 +1,183 @@
-// Cloudflare Worker - Receiver Site
-// Deploy this as a separate worker to receive and display quiz data
+// Cloudflare Worker — Quiz Result Receiver
+// KV Binding required: QUIZ_KV
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
     const url = new URL(request.url);
-    
-    // Handle CORS preflight
-    if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
+
+    // ── CORS preflight ──────────────────────────────────
+    if (request.method === "OPTIONS") {
+      return cors(new Response(null, { status: 204 }));
+    }
+
+    // ── POST /  — receive quiz result ───────────────────
+    if (request.method === "POST") {
+      let data;
+      try {
+        data = await request.json();
+      } catch {
+        return cors(new Response("Invalid JSON", { status: 400 }));
+      }
+
+      const required = ["name", "score", "total", "startTime", "submitTime"];
+      for (const f of required) {
+        if (data[f] === undefined) {
+          return cors(new Response(`Missing field: ${f}`, { status: 400 }));
+        }
+      }
+
+      const id = `result_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      await env.QUIZ_KV.put(id, JSON.stringify({ id, receivedAt: new Date().toISOString(), ...data }));
+
+      return cors(new Response(JSON.stringify({ ok: true, id }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      }));
+    }
+
+    // ── GET /  — display all results ────────────────────
+    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "")) {
+      const list = await env.QUIZ_KV.list({ prefix: "result_" });
+      const records = await Promise.all(
+        list.keys.map(k => env.QUIZ_KV.get(k.name, "json"))
+      );
+      records.sort((a, b) => new Date(b.submitTime) - new Date(a.submitTime));
+
+      return new Response(renderHTML(records), {
+        headers: { "Content-Type": "text/html; charset=utf-8" }
       });
     }
 
-    // GET request - Display the dashboard
-    if (request.method === 'GET') {
-      return handleDashboard(request, env);
+    // ── GET /data  — raw JSON dump ───────────────────────
+    if (request.method === "GET" && url.pathname === "/data") {
+      const list = await env.QUIZ_KV.list({ prefix: "result_" });
+      const records = await Promise.all(
+        list.keys.map(k => env.QUIZ_KV.get(k.name, "json"))
+      );
+      records.sort((a, b) => new Date(b.submitTime) - new Date(a.submitTime));
+      return cors(new Response(JSON.stringify(records, null, 2), {
+        headers: { "Content-Type": "application/json" }
+      }));
     }
 
-    // POST request - Receive quiz data
-    if (request.method === 'POST') {
-      return handleSubmission(request, env);
-    }
-
-    return new Response('Method not allowed', { status: 405 });
+    return new Response("Not found", { status: 404 });
   }
 };
 
-// Store submissions in memory (will be lost on worker restart, but perfect for demo)
-let submissions = [];
-
-async function handleDashboard(request, env) {
-  const html = generateDashboardHTML();
-  
-  return new Response(html, {
-    headers: {
-      'Content-Type': 'text/html;charset=UTF-8',
-      'Access-Control-Allow-Origin': '*',
-    },
-  });
+// ── CORS wrapper ─────────────────────────────────────────
+function cors(response) {
+  response.headers.set("Access-Control-Allow-Origin", "*");
+  response.headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  response.headers.set("Access-Control-Allow-Headers", "Content-Type");
+  return response;
 }
 
-async function handleSubmission(request, env) {
-  try {
-    const data = await request.json();
-    
-    // Add server timestamp
-    const submission = {
-      ...data,
-      receivedAt: new Date().toISOString(),
-      id: Date.now().toString(36) + Math.random().toString(36).substr(2)
-    };
-    
-    // Add to in-memory array (newest first)
-    submissions.unshift(submission);
-    
-    // Keep only last 50 submissions to prevent memory issues
-    if (submissions.length > 50) {
-      submissions = submissions.slice(0, 50);
-    }
-    
-    return new Response(JSON.stringify({ 
-      success: true, 
-      message: 'Quiz data received successfully',
-      id: submission.id 
-    }), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ 
-      success: false, 
-      message: 'Invalid data format' 
-    }), {
-      status: 400,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+// ── HTML renderer ─────────────────────────────────────────
+function renderHTML(records) {
+  function fmt(iso) {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { year:"numeric", month:"short", day:"numeric" })
+      + " " + d.toLocaleTimeString(undefined, { hour:"2-digit", minute:"2-digit", second:"2-digit" });
   }
-}
 
-function generateDashboardHTML() {
-  const submissionsHTML = submissions.length === 0 
-    ? `<div style="text-align:center;color:#64748b;padding:40px;">
-         <p style="font-size:1.5rem;">📭</p>
-         <p>No quiz submissions yet. Waiting for data...</p>
-       </div>`
-    : submissions.map((sub, index) => `
-      <div class="submission-card" style="animation: slideIn 0.3s ease-out ${index * 0.05}s both;">
-        <div class="submission-header">
-          <span class="user-badge">👤 ${escapeHtml(sub.userName || 'Anonymous')}</span>
-          <span class="score-badge ${getScoreClass(sub.score, sub.totalQuestions)}">
-            ${sub.score}/${sub.totalQuestions}
-          </span>
+  function dur(sec) {
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  }
+
+  const rows = records.map(r => {
+    const pct = Math.round((r.score / r.total) * 100);
+    const colour = pct === 100 ? "#38a169" : pct >= 70 ? "#4f46e5" : pct >= 50 ? "#d69e2e" : "#e53e3e";
+
+    const answerRows = (r.answers || []).map(a =>
+      `<tr>
+        <td>${a.question}</td>
+        <td style="color:${a.correct ? "#38a169" : "#e53e3e"}">${a.chosen}</td>
+        <td style="color:#38a169">${a.correctAnswer}</td>
+        <td style="text-align:center">${a.correct ? "✅" : "❌"}</td>
+      </tr>`
+    ).join("");
+
+    return `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="name">${esc(r.name)}</div>
+          <div class="times">
+            Start: ${fmt(r.startTime)}<br>
+            Submit: ${fmt(r.submitTime)}<br>
+            Duration: ${dur(r.durationSeconds || 0)}<br>
+            Received: ${fmt(r.receivedAt)}
+          </div>
         </div>
-        <div class="time-grid">
-          <div class="time-item">
-            <span class="time-label">🕒 Quiz Start</span>
-            <span>${formatDate(sub.startTime)}</span>
-          </div>
-          <div class="time-item">
-            <span class="time-label">✅ Quiz Submit</span>
-            <span>${formatDate(sub.submitTime)}</span>
-          </div>
-          <div class="time-item">
-            <span class="time-label">📥 Received</span>
-            <span>${formatDate(sub.receivedAt)}</span>
-          </div>
-        </div>
-        ${sub.answers ? `
-        <details class="answers-detail">
-          <summary>View Answers (${sub.answers.filter(a => a.selected === a.correct).length} correct)</summary>
-          <div class="answers-list">
-            ${sub.answers.map((answer, i) => `
-              <div class="answer-item ${answer.selected === answer.correct ? 'correct' : 'incorrect'}">
-                <span class="question-num">Q${i+1}:</span>
-                <span>${escapeHtml(answer.question)}</span>
-                <div class="answer-detail">
-                  <span>Your answer: ${answer.selected || 'Not answered'}</span>
-                  ${answer.selected !== answer.correct ? `<span class="correct-answer">Correct: ${answer.correct}</span>` : '✓'}
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        </details>
-        ` : ''}
-        <div class="submission-footer">
-          <span class="submission-id">ID: ${sub.id}</span>
+        <div class="score-circle" style="border-color:${colour};color:${colour}">
+          ${r.score}/${r.total}
+          <small>${pct}%</small>
         </div>
       </div>
-    `).join('');
+      ${r.answers && r.answers.length ? `
+      <details>
+        <summary>View answers (${r.answers.length})</summary>
+        <table>
+          <thead><tr><th>Question</th><th>Chosen</th><th>Correct</th><th>✓</th></tr></thead>
+          <tbody>${answerRows}</tbody>
+        </table>
+      </details>` : ""}
+    </div>`;
+  }).join("");
 
-  return `
-<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quiz Results Dashboard</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      padding: 20px;
-    }
-    
-    .container {
-      max-width: 800px;
-      margin: 0 auto;
-    }
-    
-    .header {
-      background: white;
-      border-radius: 20px;
-      padding: 30px;
-      margin-bottom: 30px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-      text-align: center;
-    }
-    
-    .header h1 {
-      font-size: 2rem;
-      color: #1a202c;
-      margin-bottom: 10px;
-    }
-    
-    .header p {
-      color: #718096;
-      font-size: 1.1rem;
-    }
-    
-    .stats-bar {
-      display: flex;
-      gap: 15px;
-      margin-bottom: 25px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-    
-    .stat-card {
-      background: white;
-      border-radius: 15px;
-      padding: 15px 25px;
-      text-align: center;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-      min-width: 100px;
-    }
-    
-    .stat-number {
-      font-size: 2rem;
-      font-weight: bold;
-      color: #667eea;
-    }
-    
-    .stat-label {
-      font-size: 0.9rem;
-      color: #718096;
-      margin-top: 5px;
-    }
-    
-    .submission-card {
-      background: white;
-      border-radius: 15px;
-      padding: 25px;
-      margin-bottom: 20px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-      transition: transform 0.2s;
-    }
-    
-    .submission-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(0,0,0,0.12);
-    }
-    
-    .submission-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-    
-    .user-badge {
-      background: #edf2f7;
-      padding: 8px 16px;
-      border-radius: 25px;
-      font-weight: 600;
-      color: #2d3748;
-      font-size: 1.1rem;
-    }
-    
-    .score-badge {
-      padding: 8px 20px;
-      border-radius: 25px;
-      font-weight: bold;
-      font-size: 1.2rem;
-      color: white;
-    }
-    
-    .score-excellent { background: #48bb78; }
-    .score-good { background: #4299e1; }
-    .score-fair { background: #ed8936; }
-    .score-poor { background: #f56565; }
-    
-    .time-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 15px;
-      margin-bottom: 20px;
-    }
-    
-    .time-item {
-      background: #f7fafc;
-      padding: 12px;
-      border-radius: 10px;
-    }
-    
-    .time-label {
-      display: block;
-      font-size: 0.85rem;
-      color: #718096;
-      margin-bottom: 5px;
-    }
-    
-    .answers-detail {
-      margin-top: 20px;
-      border-top: 2px solid #e2e8f0;
-      padding-top: 15px;
-    }
-    
-    .answers-detail summary {
-      cursor: pointer;
-      font-weight: 600;
-      color: #4a5568;
-      padding: 10px;
-      background: #f7fafc;
-      border-radius: 8px;
-      user-select: none;
-    }
-    
-    .answers-detail summary:hover {
-      background: #edf2f7;
-    }
-    
-    .answers-list {
-      margin-top: 15px;
-    }
-    
-    .answer-item {
-      padding: 12px;
-      margin-bottom: 10px;
-      border-radius: 10px;
-      background: #f7fafc;
-      border-left: 4px solid #cbd5e0;
-    }
-    
-    .answer-item.correct {
-      border-left-color: #48bb78;
-      background: #f0fff4;
-    }
-    
-    .answer-item.incorrect {
-      border-left-color: #f56565;
-      background: #fff5f5;
-    }
-    
-    .question-num {
-      font-weight: bold;
-      margin-right: 10px;
-      color: #4a5568;
-    }
-    
-    .answer-detail {
-      margin-top: 8px;
-      font-size: 0.9rem;
-      color: #718096;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    
-    .correct-answer {
-      color: #48bb78;
-      font-weight: 600;
-    }
-    
-    .submission-footer {
-      margin-top: 15px;
-      padding-top: 15px;
-      border-top: 1px solid #e2e8f0;
-      font-size: 0.8rem;
-      color: #a0aec0;
-    }
-    
-    .submission-id {
-      font-family: monospace;
-    }
-    
-    @keyframes slideIn {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    
-    .auto-refresh {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: white;
-      padding: 10px 20px;
-      border-radius: 25px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-      font-size: 0.9rem;
-      color: #718096;
-    }
-    
-    @media (max-width: 640px) {
-      .header { padding: 20px; }
-      .submission-card { padding: 15px; }
-      .time-grid { grid-template-columns: 1fr; }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quiz Results</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f0f4f8; color: #2d3748; padding: 24px 16px 48px; }
+  h1 { font-size: 1.5rem; font-weight: 800; color: #1a202c; margin-bottom: 4px; }
+  .subtitle { color: #718096; font-size: 0.9rem; margin-bottom: 24px; }
+  .card { background: #fff; border-radius: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    margin-bottom: 16px; padding: 20px; max-width: 720px; margin-left: auto; margin-right: auto; }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  .name { font-size: 1.15rem; font-weight: 700; color: #1a202c; margin-bottom: 6px; }
+  .times { font-size: 0.8rem; color: #718096; line-height: 1.7; }
+  .score-circle {
+    width: 72px; height: 72px; border-radius: 50%;
+    border: 4px solid; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-size: 1.1rem; font-weight: 800; flex-shrink: 0;
+  }
+  .score-circle small { font-size: 0.7rem; font-weight: 500; }
+  details { margin-top: 16px; }
+  summary { cursor: pointer; color: #4f46e5; font-size: 0.88rem; font-weight: 600;
+    padding: 8px 0; user-select: none; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.83rem; }
+  th { text-align: left; padding: 8px 10px; background: #f7fafc; color: #718096;
+    border-bottom: 1px solid #e2e8f0; font-weight: 600; }
+  td { padding: 8px 10px; border-bottom: 1px solid #f0f4f8; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .empty { text-align: center; color: #a0aec0; padding: 48px 0; font-size: 1rem; }
+  .json-link { display: inline-block; margin-bottom: 20px; font-size: 0.85rem;
+    color: #4f46e5; text-decoration: none; }
+  @media(max-width:480px) {
+    .card-header { flex-direction: column-reverse; }
+    .score-circle { align-self: flex-end; }
+  }
+</style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>📊 Quiz Results Dashboard</h1>
-      <p>Real-time submissions from the quiz app</p>
-    </div>
-    
-    <div class="stats-bar">
-      <div class="stat-card">
-        <div class="stat-number">${submissions.length}</div>
-        <div class="stat-label">Total Submissions</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-number">${submissions.length > 0 ? Math.round(submissions.reduce((sum, sub) => sum + (sub.score/sub.totalQuestions*100), 0) / submissions.length) : 0}%</div>
-        <div class="stat-label">Average Score</div>
-      </div>
-    </div>
-    
-    <div id="submissions-container">
-      ${submissionsHTML}
-    </div>
-  </div>
-  
-  <div class="auto-refresh">
-    🔄 Auto-refreshes in 10s
-  </div>
-  
-  <script>
-    // Auto-refresh the page every 10 seconds
-    setTimeout(() => {
-      location.reload();
-    }, 10000);
-  </script>
+<h1>📊 Quiz Results</h1>
+<p class="subtitle">${records.length} submission${records.length !== 1 ? "s" : ""} — newest first</p>
+<a class="json-link" href="/data">↓ Raw JSON</a>
+${records.length === 0
+  ? `<div class="empty">No submissions yet.</div>`
+  : rows}
 </body>
 </html>`;
 }
 
-function getScoreClass(score, total) {
-  const percentage = (score / total) * 100;
-  if (percentage >= 90) return 'score-excellent';
-  if (percentage >= 70) return 'score-good';
-  if (percentage >= 50) return 'score-fair';
-  return 'score-poor';
-}
-
-function formatDate(dateString) {
-  if (!dateString) return 'N/A';
-  try {
-    const date = new Date(dateString);
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-  } catch (e) {
-    return dateString;
-  }
-}
-
-function escapeHtml(text) {
-  if (!text) return '';
-  const map = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;'
-  };
-  return text.replace(/[&<>"']/g, m => map[m]);
+function esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
