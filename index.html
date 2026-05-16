@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiz Data Receiver | Admin Panel</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #f1f5f9;
+      min-height: 100vh;
+      padding: 24px;
+      color: #0f172a;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+      padding: 32px 24px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .subtitle {
+      color: #64748b;
+      margin-bottom: 28px;
+      font-size: 0.95rem;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 16px;
+    }
+
+    .endpoint-info {
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      border-radius: 16px;
+      padding: 16px 20px;
+      margin-bottom: 28px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .method {
+      background: #16a34a;
+      color: white;
+      font-weight: 700;
+      padding: 6px 14px;
+      border-radius: 30px;
+      font-size: 0.9rem;
+      letter-spacing: 0.5px;
+    }
+
+    .url-text {
+      font-family: 'Fira Code', monospace;
+      background: #e2e8f0;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      word-break: break-all;
+    }
+
+    .clear-btn {
+      background: #ef4444;
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 30px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      font-size: 0.9rem;
+    }
+
+    .clear-btn:hover {
+      background: #dc2626;
+    }
+
+    .submissions-list {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      max-height: 60vh;
+      overflow-y: auto;
+      padding-right: 6px;
+    }
+
+    .submission-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+      transition: box-shadow 0.2s;
+    }
+
+    .submission-card:hover {
+      box-shadow: 0 8px 22px rgba(0,0,0,0.06);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .user-name {
+      font-weight: 700;
+      font-size: 1.3rem;
+      background: #0f172a;
+      color: white;
+      padding: 4px 16px;
+      border-radius: 30px;
+    }
+
+    .score-badge {
+      background: #dbeafe;
+      color: #1e40af;
+      font-weight: 700;
+      font-size: 1.2rem;
+      padding: 4px 16px;
+      border-radius: 30px;
+    }
+
+    .timestamps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      background: #f8fafc;
+      padding: 12px 16px;
+      border-radius: 14px;
+      margin: 12px 0;
+      font-size: 0.9rem;
+    }
+
+    .timestamp-item {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .answers-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .answer-chip {
+      background: #f1f5f9;
+      border-radius: 12px;
+      padding: 8px 12px;
+      font-size: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .correct-mark {
+      color: #16a34a;
+      font-weight: 600;
+    }
+
+    .wrong-mark {
+      color: #b91c1c;
+      font-weight: 600;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px;
+      color: #94a3b8;
+      font-size: 1.1rem;
+    }
+
+    .count-indicator {
+      font-weight: 600;
+      color: #334155;
+    }
+
+    @media (max-width: 500px) {
+      .container {
+        padding: 20px 16px;
+      }
+      .timestamps {
+        flex-direction: column;
+        gap: 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>
+    <span>📡</span> Quiz Receiver
+  </h1>
+  <div class="subtitle">
+    Listens for POST submissions from the mobile quiz app.
+  </div>
+
+  <div class="endpoint-info">
+    <span class="method">POST</span>
+    <span class="url-text" id="currentEndpoint">/api/quiz-submit (same origin)</span>
+    <button class="clear-btn" id="clearDataBtn">🗑 Clear All</button>
+  </div>
+
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+    <span class="count-indicator" id="submissionCount">0 submissions received</span>
+    <span style="color: #64748b; font-size: 0.8rem;">Auto-refreshes on new data</span>
+  </div>
+
+  <div id="submissionsContainer" class="submissions-list">
+    <div class="empty-state">📭 No quiz data yet. Submit from the mobile app.</div>
+  </div>
+</div>
+
+<script>
+  (function() {
+    // ---- This receiver stores submissions in memory (and localStorage for persistence) ----
+    const STORAGE_KEY = 'quiz_submissions_receiver';
+
+    // Load existing submissions from localStorage
+    function loadSubmissions() {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        return stored ? JSON.parse(stored) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveSubmissions(submissions) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(submissions));
+    }
+
+    let submissions = loadSubmissions();
+
+    // Format date string nicely
+    function formatDate(isoString) {
+      if (!isoString) return '—';
+      try {
+        const date = new Date(isoString);
+        return date.toLocaleString('en-US', {
+          year: 'numeric', month: 'short', day: 'numeric',
+          hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+      } catch (e) {
+        return isoString;
+      }
+    }
+
+    // Render all submissions into the container
+    function renderSubmissions() {
+      const container = document.getElementById('submissionsContainer');
+      const countSpan = document.getElementById('submissionCount');
+      
+      if (!container || !countSpan) return;
+      
+      countSpan.textContent = `${submissions.length} submission${submissions.length !== 1 ? 's' : ''} received`;
+
+      if (submissions.length === 0) {
+        container.innerHTML = '<div class="empty-state">📭 No quiz data yet. Submit from the mobile app.</div>';
+        return;
+      }
+
+      // Sort by submit time descending (newest first)
+      const sorted = [...submissions].sort((a, b) => {
+        const timeA = a.submitTime ? new Date(a.submitTime).getTime() : 0;
+        const timeB = b.submitTime ? new Date(b.submitTime).getTime() : 0;
+        return timeB - timeA;
+      });
+
+      container.innerHTML = sorted.map((sub, index) => {
+        const userName = sub.userName || 'Anonymous';
+        const score = sub.score !== undefined ? sub.score : '?';
+        const total = sub.totalQuestions || '?';
+        const startStr = formatDate(sub.startTime);
+        const submitStr = formatDate(sub.submitTime);
+        
+        // Build answers display if available
+        let answersHtml = '';
+        if (sub.answers && Array.isArray(sub.answers)) {
+          answersHtml = `
+            <div class="answers-grid">
+              ${sub.answers.map((ans, idx) => {
+                const isCorrect = ans.selected === ans.correct;
+                const markClass = isCorrect ? 'correct-mark' : 'wrong-mark';
+                const markSymbol = isCorrect ? '✓' : '✗';
+                return `
+                  <div class="answer-chip">
+                    <span style="font-weight:600;">Q${idx+1}</span>
+                    <span>${ans.selected || '—'}</span>
+                    <span class="${markClass}">${markSymbol} ${ans.correct}</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `;
+        }
+
+        return `
+          <div class="submission-card">
+            <div class="card-header">
+              <span class="user-name">👤 ${escapeHtml(userName)}</span>
+              <span class="score-badge">${score} / ${total}</span>
+            </div>
+            <div class="timestamps">
+              <div class="timestamp-item">🟢 Start: <strong>${startStr}</strong></div>
+              <div class="timestamp-item">🏁 Submit: <strong>${submitStr}</strong></div>
+            </div>
+            ${answersHtml}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Simple escape utility
+    function escapeHtml(text) {
+      if (!text) return text;
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // Add a new submission (called when POST received)
+    function addSubmission(data) {
+      // Add unique id based on timestamp + random to avoid duplicates if needed
+      const newEntry = {
+        ...data,
+        _receivedAt: new Date().toISOString(),
+        _id: Date.now() + '-' + Math.random().toString(36).substr(2, 6)
+      };
+      submissions.push(newEntry);
+      saveSubmissions(submissions);
+      renderSubmissions();
+    }
+
+    // Clear all data
+    function clearAllSubmissions() {
+      if (submissions.length === 0) return;
+      if (confirm('Delete all received submissions? This cannot be undone.')) {
+        submissions = [];
+        saveSubmissions(submissions);
+        renderSubmissions();
+      }
+    }
+
+    // ----- Intercept fetch / XMLHttpRequest to capture POST to /api/quiz-submit -----
+    // Since this receiver page is meant to be the target, we mock the endpoint by 
+    // listening to POST requests sent to the same origin path "/api/quiz-submit".
+    // In a real scenario, you'd have a server. Here we override the fetch and XMLHttpRequest
+    // to capture data locally and also display it.
+    
+    function setupReceiver() {
+      // Override fetch to capture POST to the specific endpoint
+      const originalFetch = window.fetch;
+      window.fetch = function(input, init) {
+        let url = '';
+        if (typeof input === 'string') {
+          url = input;
+        } else if (input instanceof Request) {
+          url = input.url;
+        } else if (input && input.url) {
+          url = input.url;
+        }
+
+        // Check if this is a POST to our receiver endpoint (relative or absolute)
+        const isReceiverPost = (init && init.method && init.method.toUpperCase() === 'POST') &&
+                               (url.includes('/api/quiz-submit') || url.endsWith('/api/quiz-submit'));
+        
+        if (isReceiverPost) {
+          // Try to parse body
+          if (init.body) {
+            try {
+              const bodyStr = typeof init.body === 'string' ? init.body : JSON.stringify(init.body);
+              const parsed = JSON.parse(bodyStr);
+              addSubmission(parsed);
+            } catch (e) {
+              console.warn('Receiver: could not parse body', e);
+            }
+          }
+          
+          // Return a successful response so the mobile app doesn't break
+          const response = new Response(JSON.stringify({ status: 'received', message: 'Data stored by receiver' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+          return Promise.resolve(response);
+        }
+
+        // Otherwise, pass through to original fetch
+        return originalFetch.apply(this, arguments);
+      };
+
+      // Also handle XMLHttpRequest for completeness (some older methods)
+      const OriginalXHR = window.XMLHttpRequest;
+      window.XMLHttpRequest = function() {
+        const xhr = new OriginalXHR();
+        const originalOpen = xhr.open;
+        const originalSend = xhr.send;
+
+        xhr.open = function(method, url, ...rest) {
+          this._receiverUrl = url;
+          this._receiverMethod = method;
+          return originalOpen.apply(this, [method, url, ...rest]);
+        };
+
+        xhr.send = function(body) {
+          if (this._receiverMethod && this._receiverMethod.toUpperCase() === 'POST' &&
+              this._receiverUrl && (this._receiverUrl.includes('/api/quiz-submit') || this._receiverUrl.endsWith('/api/quiz-submit'))) {
+            try {
+              const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
+              const parsed = JSON.parse(bodyStr);
+              addSubmission(parsed);
+            } catch (e) {}
+            
+            // Simulate async success
+            setTimeout(() => {
+              Object.defineProperty(xhr, 'status', { value: 200 });
+              Object.defineProperty(xhr, 'readyState', { value: 4 });
+              Object.defineProperty(xhr, 'responseText', { value: JSON.stringify({ status: 'received' }) });
+              if (xhr.onload) xhr.onload();
+              if (xhr.onreadystatechange) xhr.onreadystatechange();
+            }, 10);
+            return;
+          }
+          return originalSend.apply(this, [body]);
+        };
+        return xhr;
+      };
+
+      // Update endpoint display
+      document.getElementById('currentEndpoint').textContent = window.location.origin + '/api/quiz-submit';
+    }
+
+    // Event listeners
+    document.getElementById('clearDataBtn').addEventListener('click', clearAllSubmissions);
+
+    // Initial render
+    renderSubmissions();
+    setupReceiver();
+
+    // Optional: If you want to manually test with a button, you could add one.
+    console.log('📡 Quiz receiver active. POST to /api/quiz-submit to see data.');
+  })();
+</script>
+</body>
+</html>
