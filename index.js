@@ -1,4 +1,4 @@
-// ─── In-memory store ──────────────────────────────────────────────────────────
+// ─── In-memory store ───────────────────────────────────────────────────────
 // Lives only while this isolate is active. No KV, no Durable Objects.
 // Submissions disappear if Cloudflare spins down the isolate — intentional.
 let submissions = [];
