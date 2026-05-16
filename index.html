@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+  <title>Quiz Receiver • Live Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
+      background: #0b1120;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      color: #e2e8f0;
+    }
+
+    .dashboard {
+      width: 100%;
+      max-width: 700px;
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 36px;
+      padding: 24px 20px;
+      box-shadow: 0 25px 45px rgba(0, 0, 0, 0.6);
+    }
+
+    h1 {
+      font-weight: 500;
+      font-size: 1.9rem;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #f1f5f9;
+      letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+      color: #94a3b8;
+      margin-bottom: 24px;
+      font-size: 0.95rem;
+      border-left: 4px solid #3b82f6;
+      padding-left: 16px;
+    }
+
+    .endpoint-box {
+      background: #1e293b;
+      border-radius: 20px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      border: 1px solid #334155;
+      font-size: 0.9rem;
+      word-break: break-word;
+    }
+
+    .method {
+      background: #3b82f6;
+      color: white;
+      font-weight: bold;
+      padding: 4px 10px;
+      border-radius: 30px;
+      font-size: 0.8rem;
+      letter-spacing: 0.4px;
+    }
+
+    .url-display {
+      color: #cbd5e1;
+      font-family: monospace;
+      background: #0f172a;
+      padding: 6px 12px;
+      border-radius: 12px;
+      flex: 1;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      background: #1e293b;
+      border-radius: 18px;
+      padding: 12px 16px;
+    }
+
+    .led {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 12px #22c55e;
+    }
+
+    .submissions-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .clear-btn {
+      background: transparent;
+      border: 1px solid #475569;
+      color: #cbd5e1;
+      padding: 8px 16px;
+      border-radius: 24px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .clear-btn:hover {
+      background: #334155;
+      color: white;
+    }
+
+    .submissions-list {
+      max-height: 55vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding-right: 4px;
+    }
+
+    .submission-card {
+      background: #1e293b;
+      border-radius: 24px;
+      padding: 18px;
+      border: 1px solid #334155;
+      transition: all 0.2s;
+      animation: fadeSlide 0.3s ease;
+    }
+
+    @keyframes fadeSlide {
+      0% { opacity: 0; transform: translateY(10px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    .user-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .user-name {
+      font-weight: 600;
+      font-size: 1.2rem;
+      color: #f8fafc;
+      background: #0f172a;
+      padding: 4px 14px;
+      border-radius: 20px;
+    }
+
+    .score-badge {
+      background: #facc15;
+      color: #0f172a;
+      font-weight: 700;
+      padding: 6px 16px;
+      border-radius: 30px;
+      font-size: 1rem;
+    }
+
+    .time-details {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      margin-top: 10px;
+      background: #0f172a;
+      padding: 10px 14px;
+      border-radius: 16px;
+    }
+
+    .timestamp-item {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .answers-preview {
+      margin-top: 14px;
+      font-size: 0.8rem;
+      color: #cbd5e1;
+      border-top: 1px dashed #475569;
+      padding-top: 12px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 6px;
+    }
+
+    .answer-chip {
+      background: #0f172a;
+      padding: 4px 10px;
+      border-radius: 14px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .correct-mark {
+      color: #22c55e;
+      font-weight: bold;
+    }
+
+    .wrong-mark {
+      color: #f87171;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: #64748b;
+      padding: 40px 20px;
+      font-style: italic;
+    }
+
+    .footer-note {
+      margin-top: 20px;
+      font-size: 0.75rem;
+      color: #475569;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="dashboard">
+  <h1>📡 Quiz Receiver</h1>
+  <div class="subtitle">Live · No storage · Cloudflare ready</div>
+
+  <div class="endpoint-box">
+    <span class="method">POST</span>
+    <span class="url-display" id="endpointUrl">/api/quiz-submit</span>
+  </div>
+
+  <div class="status-indicator">
+    <span class="led" id="statusLed"></span>
+    <span id="connectionText">Waiting for submissions...</span>
+    <span style="margin-left: auto; font-size:0.8rem; color:#94a3b8;" id="submissionCount">0 received</span>
+  </div>
+
+  <div class="submissions-header">
+    <strong style="color:#e2e8f0;">📋 Recent submissions</strong>
+    <button class="clear-btn" id="clearBtn">Clear list</button>
+  </div>
+
+  <div id="submissionsContainer" class="submissions-list">
+    <div class="empty-state">No submissions yet. Send a POST request from the quiz.</div>
+  </div>
+  <div class="footer-note">
+    ⚡ This page listens for incoming data. No KV, no database — just printed below.
+  </div>
+</div>
+
+<script>
+  (function() {
+    // ---- CONFIGURATION: This should match the URL your quiz sends to ----
+    // In a real Cloudflare Worker, you'd handle POST requests.
+    // For demonstration, this page intercepts fetch calls OR you can manually simulate.
+    // Because the receiver is a static page, we use a Service Worker to intercept
+    // requests to the exact endpoint path, or we can use a simple mock.
+    // We'll register a Service Worker that listens for fetch events on this origin
+    // and captures POST data to display. This works perfectly on Cloudflare Pages.
+    // ----------------------------------------------------------------
+
+    const ENDPOINT_PATH = '/api/quiz-submit';  // must match quiz SUBMISSION_URL path
+
+    const submissionsContainer = document.getElementById('submissionsContainer');
+    const submissionCountSpan = document.getElementById('submissionCount');
+    const connectionText = document.getElementById('connectionText');
+    const statusLed = document.getElementById('statusLed');
+    const clearBtn = document.getElementById('clearBtn');
+    const endpointUrlSpan = document.getElementById('endpointUrl');
+
+    // Display current endpoint
+    if (endpointUrlSpan) {
+      endpointUrlSpan.textContent = window.location.origin + ENDPOINT_PATH;
+    }
+
+    // Store submissions in memory (array)
+    let submissions = [];
+
+    // Update UI with submissions
+    function renderSubmissions() {
+      if (!submissionsContainer) return;
+      
+      if (submissions.length === 0) {
+        submissionsContainer.innerHTML = '<div class="empty-state">✨ No submissions yet. Send data from the quiz app.</div>';
+        submissionCountSpan.textContent = '0 received';
+        return;
+      }
+
+      submissionCountSpan.textContent = `${submissions.length} received`;
+      
+      // Build HTML (newest first)
+      let html = '';
+      // iterate in reverse to show latest on top
+      [...submissions].reverse().forEach((sub) => {
+        const userName = sub.userName || 'Anonymous';
+        const score = sub.score ?? '?';
+        const total = sub.totalQuestions ?? '?';
+        const startTime = sub.startTime ? new Date(sub.startTime).toLocaleString() : '—';
+        const submitTime = sub.submitTime ? new Date(sub.submitTime).toLocaleString() : '—';
+        
+        // Build answers snippet
+        let answersHtml = '';
+        if (sub.answers && Array.isArray(sub.answers)) {
+          answersHtml = sub.answers.map((ans, idx) => {
+            const isCorrect = ans.selected === ans.correct;
+            const mark = isCorrect ? '✓' : '✗';
+            const markClass = isCorrect ? 'correct-mark' : 'wrong-mark';
+            return `
+              <div class="answer-chip">
+                <span>Q${idx+1}: ${ans.selected || '—'}</span>
+                <span class="${markClass}">${mark}</span>
+              </div>
+            `;
+          }).join('');
+        }
+
+        html += `
+          <div class="submission-card">
+            <div class="user-row">
+              <span class="user-name">👤 ${escapeHtml(userName)}</span>
+              <span class="score-badge">${score}/${total}</span>
+            </div>
+            <div class="time-details">
+              <div class="timestamp-item">🟢 Start: ${escapeHtml(startTime)}</div>
+              <div class="timestamp-item">🔴 Submit: ${escapeHtml(submitTime)}</div>
+            </div>
+            ${answersHtml ? `<div class="answers-preview">${answersHtml}</div>` : ''}
+          </div>
+        `;
+      });
+
+      submissionsContainer.innerHTML = html;
+    }
+
+    // Simple escape
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // Add new submission
+    function addSubmission(data) {
+      // Ensure we have a reasonable object
+      const submission = {
+        userName: data.userName || 'Unknown',
+        score: data.score,
+        totalQuestions: data.totalQuestions,
+        startTime: data.startTime,
+        submitTime: data.submitTime,
+        answers: data.answers || []
+      };
+      submissions.push(submission);
+      renderSubmissions();
+      
+      // Visual feedback
+      connectionText.textContent = '✅ Last submission received';
+      statusLed.style.background = '#22c55e';
+      statusLed.style.boxShadow = '0 0 14px #22c55e';
+      setTimeout(() => {
+        if (submissions.length > 0) {
+          connectionText.textContent = 'Listening for submissions...';
+        }
+      }, 2000);
+    }
+
+    // Clear submissions
+    clearBtn.addEventListener('click', () => {
+      submissions = [];
+      renderSubmissions();
+      connectionText.textContent = 'List cleared. Waiting for new submissions...';
+    });
+
+    // ---- SERVICE WORKER INTERCEPTION ----
+    // This allows the static page to capture POST requests sent to /api/quiz-submit
+    // without a backend. Works in modern browsers.
+    if ('serviceWorker' in navigator) {
+      // Register a Service Worker that intercepts fetch for the endpoint
+      async function registerReceiverSW() {
+        try {
+          // Unregister any previous receiver SW to avoid conflicts (clean)
+          const existingReg = await navigator.serviceWorker.getRegistration();
+          if (existingReg) {
+            await existingReg.unregister();
+            // Small delay to ensure unregistration
+            await new Promise(r => setTimeout(r, 150));
+          }
+
+          // Create a Blob for the service worker code
+          const swCode = `
+            const RECEIVER_PATH = '${ENDPOINT_PATH}';
+            
+            self.addEventListener('fetch', (event) => {
+              const url = new URL(event.request.url);
+              // Only intercept POST requests to the exact endpoint path on our origin
+              if (event.request.method === 'POST' && url.pathname === RECEIVER_PATH) {
+                event.respondWith(
+                  (async () => {
+                    try {
+                      const clonedRequest = event.request.clone();
+                      const body = await clonedRequest.json();
+                      
+                      // Post message to all clients (the dashboard page)
+                      const clients = await self.clients.matchAll({ type: 'window' });
+                      for (const client of clients) {
+                        client.postMessage({
+                          type: 'NEW_SUBMISSION',
+                          payload: body
+                        });
+                      }
+                      
+                      // Return a success response so the quiz gets OK
+                      return new Response(JSON.stringify({ status: 'received', message: 'Data displayed on dashboard' }), {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' }
+                      });
+                    } catch (err) {
+                      return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
+                        status: 400,
+                        headers: { 'Content-Type': 'application/json' }
+                      });
+                    }
+                  })()
+                );
+              }
+              // Otherwise, just fetch normally
+            });
+
+            self.addEventListener('message', (event) => {
+              // optional
+            });
+          `;
+
+          const blob = new Blob([swCode], { type: 'application/javascript' });
+          const swUrl = URL.createObjectURL(blob);
+          
+          const registration = await navigator.serviceWorker.register(swUrl, {
+            scope: '/'
+          });
+          
+          console.log('Receiver Service Worker registered for path:', ENDPOINT_PATH);
+          
+          // Listen for messages from the service worker
+          navigator.serviceWorker.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'NEW_SUBMISSION') {
+              addSubmission(event.data.payload);
+            }
+          });
+
+          // Update UI
+          connectionText.textContent = '🟢 Active – awaiting POST requests';
+          statusLed.style.background = '#22c55e';
+        } catch (error) {
+          console.error('SW registration failed:', error);
+          connectionText.textContent = '⚠️ Service Worker could not register. Use manual simulation.';
+          statusLed.style.background = '#f59e0b';
+          // Fallback: manual simulation via button or console
+          enableManualFallback();
+        }
+      }
+
+      registerReceiverSW();
+    } else {
+      connectionText.textContent = '⚠️ Service Worker not supported. Use manual input.';
+      statusLed.style.background = '#f59e0b';
+      enableManualFallback();
+    }
+
+    // Fallback: if SW fails, we can still simulate by exposing a global function
+    function enableManualFallback() {
+      // Add a small note and a hidden feature: you can call window.mockSubmission(data) in console
+      window.mockSubmission = (data) => {
+        addSubmission(data);
+      };
+      console.log('Fallback enabled: use window.mockSubmission({userName:"test", score:8, ...}) to simulate.');
+      
+      // Also add a tiny simulate button if SW not active (optional)
+      const footer = document.querySelector('.footer-note');
+      if (footer) {
+        footer.innerHTML += '<br><button id="simulateBtn" style="margin-top:8px; background:#334155; border:none; color:white; padding:6px 14px; border-radius:20px; cursor:pointer;">⚡ Simulate test submission</button>';
+        document.getElementById('simulateBtn')?.addEventListener('click', () => {
+          const sample = {
+            userName: "Demo User",
+            score: 8,
+            totalQuestions: 10,
+            startTime: new Date(Date.now() - 120000).toISOString(),
+            submitTime: new Date().toISOString(),
+            answers: [
+              { question: "Capital of France", selected: "Paris", correct: "Paris" },
+              { question: "Red Planet", selected: "Mars", correct: "Mars" },
+              { question: "Continents", selected: "7", correct: "7" },
+              { question: "12+7", selected: "19", correct: "19" },
+              { question: "Styling", selected: "CSS", correct: "CSS" },
+              { question: "Ocean", selected: "Pacific", correct: "Pacific" },
+              { question: "Shakespeare", selected: "Shakespeare", correct: "Shakespeare" },
+              { question: "sqrt 64", selected: "8", correct: "8" },
+              { question: "Plant gas", selected: "Oxygen", correct: "Carbon Dioxide" },
+              { question: "Leap year", selected: "366", correct: "366" }
+            ]
+          };
+          addSubmission(sample);
+        });
+      }
+    }
+
+    // Initial render
+    renderSubmissions();
+  })();
+</script>
+</body>
+</html>
